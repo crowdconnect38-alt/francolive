@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { Star, BadgeCheck, MessageCircle, Heart } from "lucide-react";
-import { getTeacherById } from "@/lib/mock-data";
+import { getTeacherByIdFromDb } from "@/lib/db-teachers";
 
 const colorMap: Record<string, string> = {
   bleu: "bg-bleu text-white",
@@ -10,8 +10,8 @@ const colorMap: Record<string, string> = {
   rouge: "bg-rouge text-white",
 };
 
-export default function TeacherProfilePage({ params }: { params: { id: string } }) {
-  const teacher = getTeacherById(params.id);
+export default async function TeacherProfilePage({ params }: { params: { id: string } }) {
+  const teacher = await getTeacherByIdFromDb(params.id);
   if (!teacher) notFound();
 
   return (

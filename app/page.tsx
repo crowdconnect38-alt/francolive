@@ -2,9 +2,10 @@ import Link from "next/link";
 import { Video, MessageCircle, CalendarCheck, Sparkles } from "lucide-react";
 import TeacherCard from "@/components/TeacherCard";
 import ConjugationStrip from "@/components/ConjugationStrip";
-import { teachers } from "@/lib/mock-data";
+import { getAllTeachersFromDb } from "@/lib/db-teachers";
 
-export default function HomePage() {
+export default async function HomePage() {
+  const teachers = await getAllTeachersFromDb();
   return (
     <div>
       {/* Hero */}

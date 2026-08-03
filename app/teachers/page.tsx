@@ -1,5 +1,5 @@
 import TeacherCard from "@/components/TeacherCard";
-import { teachers } from "@/lib/mock-data";
+import { getAllTeachersFromDb } from "@/lib/db-teachers";
 import { Search, SlidersHorizontal } from "lucide-react";
 
 const FILTER_GROUPS = [
@@ -8,7 +8,8 @@ const FILTER_GROUPS = [
   { label: "Specialty", options: ["Conversation", "Business", "Exam prep", "Kids"] },
 ];
 
-export default function TeachersPage() {
+export default async function TeachersPage() {
+  const teachers = await getAllTeachersFromDb();
   return (
     <div className="max-w-6xl mx-auto px-6 py-12">
       <p className="eyebrow mb-3">Find your perfect French teacher</p>

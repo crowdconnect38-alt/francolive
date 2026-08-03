@@ -1,14 +1,15 @@
-import { getTeacherById, teachers } from "@/lib/mock-data";
+import { getTeacherByIdFromDb, getAllTeachersFromDb } from "@/lib/db-teachers";
 import { CalendarDays, Clock, CreditCard } from "lucide-react";
 
 const SLOTS = ["9:00 AM", "11:00 AM", "2:00 PM", "4:00 PM", "6:00 PM"];
 
-export default function BookingPage({
+export default async function BookingPage({
   searchParams,
 }: {
   searchParams: { teacher?: string };
 }) {
-  const teacher = getTeacherById(searchParams.teacher ?? "") ?? teachers[0];
+  const requested = searchParams.teacher ? await getTeacherByIdFromDb(searchParams.teacher) : null;
+  const teacher = requested ?? (await getAllTeachersFromDb())[0];
   const commissionRate = 0.15;
   const commission = +(teacher.pricePerHour * commissionRate).toFixed(2);
   const teacherPayout = +(teacher.pricePerHour - commission).toFixed(2);
