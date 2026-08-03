@@ -1,0 +1,333 @@
+// FrancoLive — schéma Prisma complet
+// -----------------------------------------------------------------------
+// Couvre : comptes (learner/teacher/admin), profils, demandes d'apprentissage,
+// messagerie, réservations, paiements (Stripe Connect), sessions de cours
+// (LiveKit), notes de cours, avis, favoris, abonnements, speaking clubs,
+// notifications.
+//
+// Mise en route :
+//   1. npm install prisma @prisma/client
+//   2. Renseigner DATABASE_URL dans .env (Postgres — ex. Neon, Supabase, RDS)
+//   3. npx prisma migrate dev --name init
+//   4. npx prisma db seed   (voir prisma/seed.ts)
+//
+// Remplacer ensuite lib/mock-data.ts par des appels à `prisma.*` dans les
+// composants serveur (app/teachers/page.tsx, app/dashboard/*, etc.)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------
+// Comptes & profils
+// ---------------------------------------------------------------------
+
+enum Role {
+  LEARNER
+  TEACHER
+  ADMIN
+}
+
+enum VerificationLevel {
+  UNVERIFIED
+  VERIFIED
+  TOP
+  EXPERT
+}
+
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  passwordHash  String? // null si connexion via OAuth (Clerk/Auth.js gère ça en pratique)
+  role          Role
+  fullName      String
+  avatarUrl     String?
+  country       String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  learnerProfile LearnerProfile?
+  teacherProfile TeacherProfile?
+
+  sentMessages     Message[]      @relation("MessageSender")
+  receivedMessages Message[]      @relation("MessageRecipient")
+  notifications    Notification[]
+
+  @@index([role])
+}
+
+model LearnerProfile {
+  id              String   @id @default(cuid())
+  userId          String   @unique
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  nativeLanguage  String
+  currentLevel    String // A1, A2, B1, B2, C1, C2
+  goal            String?
+  hoursLearned    Int      @default(0)
+  lessonsDone     Int      @default(0)
+  isPremium       Boolean  @default(false)
+
+  learningRequests LearningRequest[]
+  bookings         Booking[]
+  reviewsGiven     Review[]
+  favorites        Favorite[]
+  subscription     Subscription?
+}
+
+model TeacherProfile {
+  id                 String             @id @default(cuid())
+  userId             String             @unique
+  user               User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bio                String
+  introVideoUrl      String?
+  languagesSpoken    String[] // ["French", "English", ...]
+  levelsTaught       String[] // ["A1","A2",...]
+  specialties        String[] // ["Business French", "Exam prep", ...]
+  pricePerHourCents  Int // en cents, devise = currency
+  currency           String             @default("USD")
+  verification       VerificationLevel  @default(UNVERIFIED)
+  isPro              Boolean            @default(false)
+  stripeAccountId    String? // compte Stripe Connect (payouts)
+  ratingAvg          Float              @default(0)
+  ratingCount        Int                @default(0)
+  lessonsGiven       Int                @default(0)
+  createdAt          DateTime           @default(now())
+
+  availabilitySlots TeacherAvailability[]
+  proposals         TeacherProposal[]
+  bookings          Booking[]
+  reviewsReceived   Review[]
+  favoritedBy       Favorite[]
+  clubsHosted       SpeakingClub[]
+
+  @@index([verification])
+  @@index([pricePerHourCents])
+}
+
+// Créneaux récurrents (ex. "Tuesday 18:00-20:00") + exceptions ponctuelles
+model TeacherAvailability {
+  id          String         @id @default(cuid())
+  teacherId   String
+  teacher     TeacherProfile @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  dayOfWeek   Int? // 0-6, null si créneau exceptionnel ponctuel
+  date        DateTime? // pour un créneau ponctuel (exception ou dispo unique)
+  startTime   String // "18:00"
+  endTime     String // "20:00"
+  isBlocked   Boolean        @default(false) // pour bloquer un créneau normalement récurrent
+
+  @@index([teacherId])
+}
+
+// ---------------------------------------------------------------------
+// Demandes d'apprentissage & propositions
+// ---------------------------------------------------------------------
+
+model LearningRequest {
+  id               String          @id @default(cuid())
+  learnerId        String
+  learner          LearnerProfile  @relation(fields: [learnerId], references: [id], onDelete: Cascade)
+  level            String
+  goal             String
+  lessonsPerWeek   Int
+  budgetCents      Int
+  availability     String
+  status           String          @default("open") // open | matched | closed
+  createdAt        DateTime        @default(now())
+
+  proposals TeacherProposal[]
+
+  @@index([status])
+}
+
+model TeacherProposal {
+  id          String           @id @default(cuid())
+  requestId   String
+  request     LearningRequest  @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  teacherId   String
+  teacher     TeacherProfile   @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  message     String
+  status      String           @default("pending") // pending | accepted | declined
+  createdAt   DateTime         @default(now())
+
+  @@unique([requestId, teacherId])
+}
+
+// ---------------------------------------------------------------------
+// Messagerie
+// ---------------------------------------------------------------------
+
+model Message {
+  id          String   @id @default(cuid())
+  senderId    String
+  sender      User     @relation("MessageSender", fields: [senderId], references: [id], onDelete: Cascade)
+  recipientId String
+  recipient   User     @relation("MessageRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
+  body        String
+  readAt      DateTime?
+  createdAt   DateTime @default(now())
+
+  @@index([senderId, recipientId])
+}
+
+// ---------------------------------------------------------------------
+// Réservations, paiements, sessions de cours
+// ---------------------------------------------------------------------
+
+enum BookingStatus {
+  PENDING_PAYMENT
+  CONFIRMED
+  COMPLETED
+  CANCELLED
+  REFUNDED
+}
+
+model Booking {
+  id              String         @id @default(cuid())
+  learnerId       String
+  learner         LearnerProfile @relation(fields: [learnerId], references: [id], onDelete: Cascade)
+  teacherId       String
+  teacher         TeacherProfile @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  scheduledStart  DateTime
+  durationMinutes Int            @default(60)
+  status          BookingStatus  @default(PENDING_PAYMENT)
+  createdAt       DateTime       @default(now())
+  cancelledAt     DateTime?
+
+  payment Payment?
+  session LessonSession?
+  review  Review?
+
+  @@index([teacherId, scheduledStart])
+  @@index([learnerId, scheduledStart])
+}
+
+model Payment {
+  id                     String   @id @default(cuid())
+  bookingId              String   @unique
+  booking                Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  amountCents            Int
+  commissionCents        Int
+  teacherPayoutCents     Int
+  currency               String   @default("USD")
+  stripePaymentIntentId  String?  @unique
+  status                 String   @default("pending") // pending | succeeded | refunded | failed
+  createdAt              DateTime @default(now())
+}
+
+// Une LessonSession n'est créée / son token LiveKit délivré qu'une fois
+// Booking.status == CONFIRMED (paiement réussi) — voir app/api/livekit-token.
+model LessonSession {
+  id               String    @id @default(cuid())
+  bookingId        String    @unique
+  booking          Booking   @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  livekitRoomName  String    @unique // = bookingId ou identifiant dédié
+  startedAt        DateTime?
+  endedAt          DateTime?
+  recordingUrl     String? // rempli seulement si consentement + plan Premium
+  recordingConsent Boolean   @default(false)
+
+  notes LessonNote?
+}
+
+model LessonNote {
+  id            String        @id @default(cuid())
+  sessionId     String        @unique
+  session       LessonSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  vocabulary    String[]
+  commonErrors  String[]
+  homework      String?
+  recommendations String?
+  createdAt     DateTime      @default(now())
+}
+
+// ---------------------------------------------------------------------
+// Avis, favoris, vérification, abonnements
+// ---------------------------------------------------------------------
+
+model Review {
+  id             String         @id @default(cuid())
+  bookingId      String         @unique
+  booking        Booking        @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  learnerId      String
+  learner        LearnerProfile @relation(fields: [learnerId], references: [id], onDelete: Cascade)
+  teacherId      String
+  teacher        TeacherProfile @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  pedagogy       Int // 1-5
+  punctuality    Int
+  communication  Int
+  quality        Int
+  overall        Int
+  comment        String?
+  createdAt      DateTime       @default(now())
+
+  @@index([teacherId])
+}
+
+model Favorite {
+  id         String         @id @default(cuid())
+  learnerId  String
+  learner    LearnerProfile @relation(fields: [learnerId], references: [id], onDelete: Cascade)
+  teacherId  String
+  teacher    TeacherProfile @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  createdAt  DateTime       @default(now())
+
+  @@unique([learnerId, teacherId])
+}
+
+model Subscription {
+  id                    String         @id @default(cuid())
+  learnerId             String         @unique
+  learner                LearnerProfile @relation(fields: [learnerId], references: [id], onDelete: Cascade)
+  plan                  String // "premium"
+  stripeSubscriptionId  String?        @unique
+  status                String         @default("active") // active | cancelled | past_due
+  currentPeriodEnd      DateTime?
+}
+
+// ---------------------------------------------------------------------
+// Communauté
+// ---------------------------------------------------------------------
+
+model SpeakingClub {
+  id           String         @id @default(cuid())
+  title        String // "French Coffee Chat", "Conversation Night"...
+  hostId       String
+  host         TeacherProfile @relation(fields: [hostId], references: [id], onDelete: Cascade)
+  scheduledAt  DateTime
+  livekitRoomName String      @unique
+  maxSeats     Int            @default(12)
+  createdAt    DateTime       @default(now())
+
+  participants SpeakingClubParticipant[]
+}
+
+model SpeakingClubParticipant {
+  id        String       @id @default(cuid())
+  clubId    String
+  club      SpeakingClub @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  userId    String
+  joinedAt  DateTime     @default(now())
+
+  @@unique([clubId, userId])
+}
+
+// ---------------------------------------------------------------------
+// Notifications
+// ---------------------------------------------------------------------
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String // "new_message" | "booking_confirmed" | "lesson_reminder" | ...
+  payload   Json?
+  readAt    DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([userId, readAt])
+}

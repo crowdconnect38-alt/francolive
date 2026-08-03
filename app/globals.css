@@ -1,0 +1,49 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    @apply border-bleu/10;
+  }
+  body {
+    font-feature-settings: "liga" 1, "kern" 1;
+  }
+  :focus-visible {
+    outline: 2px solid theme("colors.ochre.DEFAULT");
+    outline-offset: 2px;
+  }
+}
+
+@layer components {
+  /* Signature element: an "enamel street-sign" plaque used for teacher
+     cards, match-score badges and stat chips — nods to Parisian signage
+     instead of a generic rounded SaaS card. */
+  .plaque {
+    @apply relative bg-plaque rounded-plaque border border-bleu/10 shadow-[0_1px_0_rgba(26,32,53,0.04),0_8px_24px_-12px_rgba(26,32,53,0.18)];
+  }
+  .plaque::before {
+    content: "";
+    @apply absolute top-2 left-2 w-1.5 h-1.5 rounded-full bg-ochre/70;
+  }
+
+  .eyebrow {
+    @apply font-mono text-[11px] uppercase tracking-signage text-bleu/60;
+  }
+
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-plaque bg-ochre text-ink font-body font-semibold px-6 py-3 transition-colors hover:bg-ochre-deep;
+  }
+
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 rounded-plaque border border-ink/15 bg-transparent text-ink font-body font-semibold px-6 py-3 transition-colors hover:bg-ink/5;
+  }
+
+  .btn-ghost-inverse {
+    @apply inline-flex items-center justify-center gap-2 rounded-plaque border border-white/25 bg-white/5 text-white font-body font-semibold px-6 py-3 transition-colors hover:bg-white/15;
+  }
+
+  .input {
+    @apply w-full bg-paper border border-ink/15 rounded-plaque px-3 py-2 text-sm outline-none focus:border-bleu/50;
+  }
+}
